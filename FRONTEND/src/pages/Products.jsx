@@ -1,49 +1,42 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { useInfiniteQuery } from "@tanstack/react-query";
 import { Search, SlidersHorizontal } from "lucide-react";
 import ProductCard from "../components/ProductCard";
 import { Input } from "../components/ui/input";
 import { getProducts } from "../services/products";
 
+const PAGE_SIZE = 12;
+
 export default function Products() {
-  const [products, setProducts] = useState([]);
   const [query, setQuery] = useState("");
   const [stockFilter, setStockFilter] = useState("all");
   const [sort, setSort] = useState("default");
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState("");
+  const loadMoreRef = useRef(null);
+  const {
+    data,
+    error,
+    isPending,
+    isError,
+    isFetchNextPageError,
+    refetch,
+    hasNextPage,
+    isFetchingNextPage,
+    fetchNextPage,
+  } = useInfiniteQuery({
+    queryKey: ["products", "infinite"],
+    queryFn: ({ pageParam }) =>
+      getProducts({ skip: pageParam, limit: PAGE_SIZE }),
+    initialPageParam: 0,
+    getNextPageParam: (lastPage, _pages, lastPageParam) =>
+      lastPage.length === PAGE_SIZE ? lastPageParam + PAGE_SIZE : undefined,
+  });
 
-  useEffect(() => {
-    let active = true;
-
-    const loadProducts = async (showLoading = false) => {
-      if (showLoading) setLoading(true);
-      setError("");
-
-      try {
-        const latestProducts = await getProducts();
-        if (active) setProducts(latestProducts);
-      } catch (err) {
-        if (active) setError(err.response?.data?.detail || "Unable to load products.");
-      } finally {
-        if (active && showLoading) setLoading(false);
-      }
-    };
-
-    const refreshProducts = () => loadProducts();
-    const handleVisibilityChange = () => {
-      if (document.visibilityState === "visible") refreshProducts();
-    };
-
-    loadProducts(true);
-    window.addEventListener("focus", refreshProducts);
-    document.addEventListener("visibilitychange", handleVisibilityChange);
-
-    return () => {
-      active = false;
-      window.removeEventListener("focus", refreshProducts);
-      document.removeEventListener("visibilitychange", handleVisibilityChange);
-    };
-  }, []);
+  const products = useMemo(
+    () => data?.pages.flat() ?? [],
+    [data]
+  );
+  const filtersActive =
+    query.length > 0 || stockFilter !== "all" || sort !== "default";
 
   const filtered = useMemo(() => {
     const result = products.filter((product) => {
@@ -64,24 +57,73 @@ export default function Products() {
     });
   }, [products, query, stockFilter, sort]);
 
+  useEffect(() => {
+    const target = loadMoreRef.current;
+    if (!target || !hasNextPage || isFetchNextPageError) return undefined;
+
+    const observer = new IntersectionObserver(
+      ([entry]) => {
+        if (entry.isIntersecting && !isFetchingNextPage) fetchNextPage();
+      },
+      { rootMargin: "240px" }
+    );
+    observer.observe(target);
+    return () => observer.disconnect();
+  }, [fetchNextPage, hasNextPage, isFetchingNextPage, isFetchNextPageError]);
+
+  useEffect(() => {
+    if (
+      filtersActive &&
+      hasNextPage &&
+      !isFetchingNextPage &&
+      !isFetchNextPageError
+    ) {
+      fetchNextPage();
+    }
+  }, [
+    fetchNextPage,
+    filtersActive,
+    hasNextPage,
+    isFetchingNextPage,
+    isFetchNextPageError,
+  ]);
+
   return (
-    <div className="mx-auto max-w-7xl px-4 py-8 sm:px-6">
+    <main className="mx-auto max-w-7xl px-4 py-8 sm:px-6">
       <section className="mb-8 rounded-2xl bg-slate-900 px-6 py-10 text-white sm:px-10">
-        <p className="mb-2 text-sm font-medium text-slate-300">DAY 13 E-COMMERCE</p>
-        <h1 className="text-3xl font-bold sm:text-4xl">Find your next product from Shophub!</h1>
+        <p className="mb-2 text-sm font-medium text-slate-300">SHOPHUB</p>
+        <h1 className="text-3xl font-bold sm:text-4xl">
+          Find your next product from Shophub!
+        </h1>
       </section>
 
       <div className="mb-8 grid gap-3 md:grid-cols-[1fr_180px_200px]">
         <div className="relative">
           <Search className="absolute left-3 top-3 h-4 w-4 text-slate-400" />
-          <Input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search products..." className="pl-9" />
+          <Input
+            value={query}
+            onChange={(event) => setQuery(event.target.value)}
+            placeholder="Search loaded products..."
+            aria-label="Search products"
+            className="pl-9"
+          />
         </div>
-        <select value={stockFilter} onChange={(e) => setStockFilter(e.target.value)} className="h-10 rounded-lg border border-slate-300 bg-white px-3 text-sm">
+        <select
+          value={stockFilter}
+          onChange={(event) => setStockFilter(event.target.value)}
+          aria-label="Filter by stock"
+          className="h-10 rounded-lg border border-slate-300 bg-white px-3 text-sm"
+        >
           <option value="all">All stock</option>
           <option value="available">In stock</option>
           <option value="out">Out of stock</option>
         </select>
-        <select value={sort} onChange={(e) => setSort(e.target.value)} className="h-10 rounded-lg border border-slate-300 bg-white px-3 text-sm">
+        <select
+          value={sort}
+          onChange={(event) => setSort(event.target.value)}
+          aria-label="Sort products"
+          className="h-10 rounded-lg border border-slate-300 bg-white px-3 text-sm"
+        >
           <option value="default">Sort: Default</option>
           <option value="price-low">Price: Low to high</option>
           <option value="price-high">Price: High to low</option>
@@ -90,19 +132,64 @@ export default function Products() {
       </div>
 
       <div className="mb-4 flex items-center gap-2 text-sm text-slate-500">
-        <SlidersHorizontal className="h-4 w-4" /> {filtered.length} product{filtered.length !== 1 ? "s" : ""} found
+        <SlidersHorizontal className="h-4 w-4" />
+        {filtered.length} loaded product{filtered.length !== 1 ? "s" : ""} shown
       </div>
-
-      {loading && <div className="py-16 text-center text-slate-500">Loading products...</div>}
-      {error && <div className="rounded-lg border border-red-200 bg-red-50 p-4 text-red-700">{error}</div>}
-
-      {!loading && !error && filtered.length === 0 && (
-        <div className="rounded-xl border bg-white p-12 text-center text-slate-500">No products match your search.</div>
+      {filtersActive && hasNextPage && (
+        <p role="status" className="mb-4 text-sm text-slate-500">
+          Loading the catalog to apply filters to every product...
+        </p>
       )}
 
-      <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
-        {filtered.map((product) => <ProductCard key={product.id} product={product} />)}
-      </div>
-    </div>
+      {isPending && (
+        <div className="py-16 text-center text-slate-500">Loading products...</div>
+      )}
+      {isError && (
+        <div role="alert" className="rounded-lg border border-red-200 bg-red-50 p-4 text-red-700">
+          {error.response?.data?.detail || "Unable to load products."}
+          <button
+            type="button"
+            onClick={() => (isFetchNextPageError ? fetchNextPage() : refetch())}
+            className="ml-2 font-medium underline"
+          >
+            Retry
+          </button>
+        </div>
+      )}
+
+      {data && filtered.length === 0 && (
+        <div className="rounded-xl border bg-white p-12 text-center text-slate-500">
+          No loaded products match your search.
+        </div>
+      )}
+
+      {data && (
+        <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+          {filtered.map((product, index) => (
+            <ProductCard
+              key={product.id}
+              product={product}
+              prioritizeImage={index === 0}
+            />
+          ))}
+        </div>
+      )}
+
+      <div ref={loadMoreRef} aria-hidden="true" className="h-1" />
+      {isFetchingNextPage && (
+        <p role="status" className="py-6 text-center text-sm text-slate-500">
+          Loading more products...
+        </p>
+      )}
+      {hasNextPage && !isFetchingNextPage && (
+        <button
+          type="button"
+          onClick={() => fetchNextPage()}
+          className="mx-auto mt-6 block rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-medium hover:bg-slate-50"
+        >
+          Load more products
+        </button>
+      )}
+    </main>
   );
 }

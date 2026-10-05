@@ -1,3 +1,4 @@
+import { memo } from "react";
 import { Link } from "react-router-dom";
 import { Card, CardContent } from "./ui/card";
 import { Button } from "./ui/button";
@@ -9,14 +10,21 @@ function imageSrc(url) {
   return `${API_URL.replace("/api", "")}${url}`;
 }
 
-export default function ProductCard({ product }) {
+function ProductCard({ product, prioritizeImage = false }) {
   const src = imageSrc(product.image_url);
 
   return (
     <Card className="overflow-hidden transition hover:-translate-y-1 hover:shadow-lg">
       <div className="aspect-[4/3] bg-slate-100">
         {src ? (
-          <img src={src} alt={product.name} className="h-full w-full object-cover" />
+          <img
+            src={src}
+            alt={product.name}
+            loading={prioritizeImage ? "eager" : "lazy"}
+            decoding="async"
+            fetchPriority={prioritizeImage ? "high" : "auto"}
+            className="h-full w-full object-cover"
+          />
         ) : (
           <div className="flex h-full items-center justify-center text-sm text-slate-400">No image</div>
         )}
@@ -39,3 +47,5 @@ export default function ProductCard({ product }) {
     </Card>
   );
 }
+
+export default memo(ProductCard);

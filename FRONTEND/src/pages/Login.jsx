@@ -6,7 +6,7 @@ import { Button } from "../components/ui/button";
 import { useAuth } from "../context/AuthContext";
 
 export default function Login() {
-  const { login } = useAuth();
+  const login = useAuth((state) => state.login);
   const navigate = useNavigate();
   const location = useLocation();
   const [form, setForm] = useState({ email: "", password: "" });

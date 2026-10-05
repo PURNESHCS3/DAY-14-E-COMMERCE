@@ -6,7 +6,7 @@ import { useAuth } from "../context/AuthContext";
 
 export default function Orders() {
   const { id } = useParams();
-  const { user } = useAuth();
+  const user = useAuth((state) => state.user);
   const ordersPath = user?.role === "admin" ? "/admin/orders" : "/orders";
   const [orders, setOrders] = useState([]);
   const [loading, setLoading] = useState(true);

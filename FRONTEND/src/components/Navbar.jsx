@@ -2,9 +2,15 @@ import { Link, useNavigate } from "react-router-dom";
 import { ShoppingBag, User, LogOut } from "lucide-react";
 import { Button } from "./ui/button";
 import { useAuth } from "../context/AuthContext";
+import { useCartQuery } from "../hooks/useCart";
+import { useCartStore } from "../stores/cartStore";
 
 export default function Navbar() {
-  const { user, logout } = useAuth();
+  const user = useAuth((state) => state.user);
+  const logout = useAuth((state) => state.logout);
+  const cartQuantities = useCartStore((state) => state.quantities);
+  const cartCount = Object.values(cartQuantities).reduce((sum, quantity) => sum + quantity, 0);
+  useCartQuery(Boolean(user && user.role !== "admin"));
   const navigate = useNavigate();
 
   const handleLogout = () => {
@@ -31,7 +37,9 @@ export default function Navbar() {
                 </>
               ) : (
                 <>
-                  <Link to="/cart" className="rounded-lg px-3 py-2 text-sm hover:bg-slate-100">Cart</Link>
+                  <Link to="/cart" className="rounded-lg px-3 py-2 text-sm hover:bg-slate-100">
+                    Cart{cartCount > 0 ? ` (${cartCount})` : ""}
+                  </Link>
                   <Link to="/orders" className="rounded-lg px-3 py-2 text-sm hover:bg-slate-100">Orders</Link>
                 </>
               )}

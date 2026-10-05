@@ -168,16 +168,22 @@ def test_regular_users_cannot_modify_products(
 
 def test_frontend_origin_can_call_api(client):
 
-    response = client.options(
-        "/api/products/",
-        headers={
-            "Origin": "http://localhost:5173",
-            "Access-Control-Request-Method": "GET"
-        }
-    )
+    for origin in (
+        "http://localhost:5173",
+        "http://127.0.0.1:5173",
+        "http://localhost:4173",
+        "http://127.0.0.1:4173",
+    ):
+        response = client.options(
+            "/api/products/",
+            headers={
+                "Origin": origin,
+                "Access-Control-Request-Method": "GET"
+            }
+        )
 
-    assert response.status_code == 200
-    assert response.headers["access-control-allow-origin"] == "http://localhost:5173"
+        assert response.status_code == 200
+        assert response.headers["access-control-allow-origin"] == origin
 
 
 def test_product_images_are_served(client):

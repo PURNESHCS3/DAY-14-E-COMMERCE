@@ -7,7 +7,8 @@ from fastapi import (
     Depends,
     HTTPException,
     UploadFile,
-    File
+    File,
+    Query,
 )
 
 from sqlalchemy.orm import Session
@@ -84,16 +85,16 @@ def create_product(
     response_model=list[ProductResponse]
 )
 def get_products(
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    skip: int = Query(0, ge=0),
+    limit: int | None = Query(None, ge=1, le=100),
 ):
 
     # --------------------------------------------------------
     # Check Redis cache
     # --------------------------------------------------------
 
-    cached_products = redis_client.get(
-        PRODUCT_CACHE_KEY
-    )
+    cached_products = redis_client.get(PRODUCT_CACHE_KEY) if limit is None else None
 
     if cached_products:
 
@@ -107,9 +108,10 @@ def get_products(
 
     print("PRODUCT CACHE MISS")
 
-    products = db.query(Product).filter(
-        Product.is_active == True
-    ).all()
+    products_query = db.query(Product).filter(Product.is_active == True)
+    if limit is not None:
+        products_query = products_query.order_by(Product.id).offset(skip).limit(limit)
+    products = products_query.all()
 
     # --------------------------------------------------------
     # Convert SQLAlchemy objects to dictionaries
@@ -133,11 +135,12 @@ def get_products(
     # Store result in Redis
     # --------------------------------------------------------
 
-    redis_client.set(
-        PRODUCT_CACHE_KEY,
-        json.dumps(product_data),
-        ex=PRODUCT_CACHE_EXPIRE
-    )
+    if limit is None:
+        redis_client.set(
+            PRODUCT_CACHE_KEY,
+            json.dumps(product_data),
+            ex=PRODUCT_CACHE_EXPIRE
+        )
 
     return product_data
 

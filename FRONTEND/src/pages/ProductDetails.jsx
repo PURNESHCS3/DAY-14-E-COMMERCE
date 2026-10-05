@@ -1,12 +1,13 @@
-import { useEffect, useState } from "react";
+import { useCallback, useState } from "react";
+import { useQuery } from "@tanstack/react-query";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import { ArrowLeft } from "lucide-react";
 import { Card, CardContent } from "../components/ui/card";
 import { Button } from "../components/ui/button";
 import { getProduct } from "../services/products";
-import { addToCart } from "../services/cart";
 import { API_URL } from "../services/api";
 import { useAuth } from "../context/AuthContext";
+import { useAddToCart } from "../hooks/useCart";
 
 function imageSrc(url) {
   if (!url) return null;
@@ -15,39 +16,46 @@ function imageSrc(url) {
 
 export default function ProductDetails() {
   const { id } = useParams();
-  const { user } = useAuth();
+  const user = useAuth((state) => state.user);
   const navigate = useNavigate();
-  const [product, setProduct] = useState(null);
-  const [error, setError] = useState("");
   const [cartMessage, setCartMessage] = useState("");
-  const [adding, setAdding] = useState(false);
+  const {
+    data: product,
+    error,
+    isPending,
+  } = useQuery({
+    queryKey: ["products", "detail", id],
+    queryFn: () => getProduct(id),
+  });
+  const addMutation = useAddToCart();
+  const addToCartAsync = addMutation.mutateAsync;
+  const adding = addMutation.isPending;
 
-  useEffect(() => {
-    getProduct(id).then(setProduct).catch((err) => setError(err.response?.data?.detail || "Product not found."));
-  }, [id]);
-
-  if (error) return <div className="mx-auto max-w-4xl px-4 py-16 text-center text-red-600">{error}</div>;
-  if (!product) return <div className="py-16 text-center text-slate-500">Loading product...</div>;
+  if (error) {
+    return (
+      <div role="alert" className="mx-auto max-w-4xl px-4 py-16 text-center text-red-600">
+        {error.response?.data?.detail || "Product not found."}
+      </div>
+    );
+  }
+  if (isPending) return <div className="py-16 text-center text-slate-500">Loading product...</div>;
 
   const src = imageSrc(product.image_url);
 
-  const handleAddToCart = async () => {
+  const handleAddToCart = useCallback(async () => {
     if (!user) {
       navigate("/login", { state: { from: `/products/${id}` } });
       return;
     }
 
-    setAdding(true);
     setCartMessage("");
     try {
-      await addToCart(product.id, 1);
+      await addToCartAsync({ productId: product.id, quantity: 1, product });
       setCartMessage("Added to cart.");
     } catch (err) {
       setCartMessage(err.response?.data?.detail || "Could not add this product to your cart.");
-    } finally {
-      setAdding(false);
     }
-  };
+  }, [addToCartAsync, id, navigate, product, user]);
 
   return (
     <div className="mx-auto max-w-5xl px-4 py-8 sm:px-6">

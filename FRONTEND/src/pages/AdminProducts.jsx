@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { useQueryClient } from "@tanstack/react-query";
 import { Link, useSearchParams } from "react-router-dom";
 import { Button } from "../components/ui/button";
 import { Input } from "../components/ui/input";
@@ -12,6 +13,7 @@ const emptyForm = {
 };
 
 export default function AdminProducts() {
+  const queryClient = useQueryClient();
   const [searchParams] = useSearchParams();
   const editProductId = searchParams.get("edit");
   const [products, setProducts] = useState([]);
@@ -69,6 +71,15 @@ export default function AdminProducts() {
       stock: Number(form.stock),
     };
 
+    const previousProducts = products;
+    if (editingId) {
+      setProducts((current) =>
+        current.map((product) =>
+          product.id === editingId ? { ...product, ...payload } : product
+        )
+      );
+    }
+
     try {
       const isEditing = Boolean(editingId);
       let product = editingId
@@ -88,10 +99,12 @@ export default function AdminProducts() {
       setProducts((current) => editingId
         ? current.map((item) => item.id === product.id ? product : item)
         : [...current, product]);
+      await queryClient.invalidateQueries({ queryKey: ["products"] });
       setError(uploadError);
       setNotice(uploadError ? "" : isEditing ? "Product updated." : "Product created.");
       resetForm();
     } catch (err) {
+      setProducts(previousProducts);
       setError(err.response?.data?.detail || "Could not save the product.");
     } finally {
       setSaving(false);
@@ -117,12 +130,15 @@ export default function AdminProducts() {
 
     setError("");
     setNotice("");
+    const previousProducts = products;
+    setProducts((current) => current.filter((item) => item.id !== product.id));
     try {
       await deleteProduct(product.id);
-      setProducts((current) => current.filter((item) => item.id !== product.id));
+      await queryClient.invalidateQueries({ queryKey: ["products"] });
       if (editingId === product.id) resetForm();
       setNotice("Product deleted.");
     } catch (err) {
+      setProducts(previousProducts);
       setError(err.response?.data?.detail || "Could not delete the product.");
     }
   };

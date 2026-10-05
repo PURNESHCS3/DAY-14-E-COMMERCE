@@ -1,10 +1,12 @@
-import { useEffect, useState } from "react";
+import { useState } from "react";
+import { useQueryClient } from "@tanstack/react-query";
 import { Link } from "react-router-dom";
 import { Button } from "../components/ui/button";
-import { getProduct } from "../services/products";
 import { createOrder } from "../services/orders";
-import { getCart, removeFromCart } from "../services/cart";
 import { API_URL } from "../services/api";
+import { useAuth } from "../context/AuthContext";
+import { useCartStore } from "../stores/cartStore";
+import { cartQueryKey, useCartItems, useCartQuery, useRemoveFromCart } from "../hooks/useCart";
 
 function imageSrc(url) {
   if (!url) return null;
@@ -12,59 +14,43 @@ function imageSrc(url) {
 }
 
 export default function Cart() {
-  const [items, setItems] = useState([]);
-  const [loading, setLoading] = useState(true);
+  const user = useAuth((state) => state.user);
+  const queryClient = useQueryClient();
+  const cartQuery = useCartQuery(Boolean(user));
+  const itemsQuery = useCartItems(cartQuery.data || {}, cartQuery.isSuccess);
+  const removeMutation = useRemoveFromCart();
+  const setCart = useCartStore((state) => state.setCart);
+  const [orderError, setOrderError] = useState("");
   const [submitting, setSubmitting] = useState(false);
-  const [error, setError] = useState("");
   const [order, setOrder] = useState(null);
   const [deliveryAddress, setDeliveryAddress] = useState("");
 
-  useEffect(() => {
-    const loadCart = async () => {
-      try {
-        const { cart } = await getCart();
-        const cartItems = await Promise.all(
-          Object.entries(cart).map(async ([productId, quantity]) => ({
-            product: await getProduct(productId),
-            quantity,
-          }))
-        );
-        setItems(cartItems);
-      } catch (err) {
-        setError(err.response?.data?.detail || "Could not load your cart.");
-      } finally {
-        setLoading(false);
-      }
-    };
-
-    loadCart();
-  }, []);
-
-  const removeItem = async (productId) => {
-    setError("");
-    try {
-      await removeFromCart(productId);
-      setItems((current) => current.filter(({ product }) => product.id !== productId));
-    } catch (err) {
-      setError(err.response?.data?.detail || "Could not remove this item.");
-    }
-  };
+  const items = itemsQuery.data || [];
+  const error = orderError || removeMutation.error?.response?.data?.detail ||
+    (removeMutation.isError ? "Could not remove this item." : "") ||
+    cartQuery.error?.response?.data?.detail ||
+    (cartQuery.isError ? "Could not load your cart." : "") ||
+    itemsQuery.error?.response?.data?.detail ||
+    (itemsQuery.isError ? "Could not load the products in your cart." : "");
 
   const checkout = async (event) => {
     event.preventDefault();
-    setError("");
+    setOrderError("");
     if (deliveryAddress.trim().length < 10) {
-      setError("Enter a delivery address with at least 10 characters.");
+      setOrderError("Enter a delivery address with at least 10 characters.");
       return;
     }
 
     setSubmitting(true);
     try {
       setOrder(await createOrder(deliveryAddress.trim()));
-      setItems([]);
+      setCart({});
+      queryClient.setQueryData(cartQueryKey, {});
+      queryClient.setQueryData([...cartQueryKey, "items"], []);
+      await queryClient.invalidateQueries({ queryKey: cartQueryKey });
       setDeliveryAddress("");
     } catch (err) {
-      setError(err.response?.data?.detail || "Could not place your order.");
+      setOrderError(err.response?.data?.detail || "Could not place your order.");
     } finally {
       setSubmitting(false);
     }
@@ -75,7 +61,9 @@ export default function Cart() {
     0
   );
 
-  if (loading) return <div className="py-16 text-center text-slate-500">Loading cart...</div>;
+  if (cartQuery.isPending || (cartQuery.isSuccess && itemsQuery.isPending)) {
+    return <div className="py-16 text-center text-slate-500">Loading cart...</div>;
+  }
 
   return (
     <main className="mx-auto max-w-4xl px-4 py-10 sm:px-6">
@@ -114,7 +102,14 @@ export default function Cart() {
                 </div>
                 <div className="flex shrink-0 items-center gap-4">
                   <span className="font-semibold">₹{(product.price * quantity).toFixed(2)}</span>
-                  <Button variant="outline" size="sm" onClick={() => removeItem(product.id)}>Remove</Button>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => removeMutation.mutate(product.id)}
+                    disabled={removeMutation.isPending}
+                  >
+                    Remove
+                  </Button>
                 </div>
               </li>
             ))}

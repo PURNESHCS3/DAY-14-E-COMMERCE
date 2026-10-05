@@ -2,7 +2,7 @@ import { useAuth } from "../context/AuthContext";
 import { Card, CardContent, CardHeader, CardTitle } from "../components/ui/card";
 
 export default function Account() {
-  const { user } = useAuth();
+  const user = useAuth((state) => state.user);
 
   return (
     <div className="mx-auto max-w-3xl px-4 py-10 sm:px-6">
